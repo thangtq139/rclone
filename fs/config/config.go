@@ -905,7 +905,7 @@ func RemoteConfig(ctx context.Context, name string) {
 	fmt.Printf("Remote config\n")
 	f := MustFindByName(name)
 	if f.Config != nil {
-		m := fs.ConfigMap(f, name)
+		m := fs.ConfigMap(f, name, nil)
 		f.Config(ctx, name, m)
 	}
 }
@@ -1418,7 +1418,7 @@ func Authorize(ctx context.Context, args []string, noAutoBrowser bool) {
 		getConfigData().SetValue(name, ConfigClientSecret, args[2])
 	}
 
-	m := fs.ConfigMap(f, name)
+	m := fs.ConfigMap(f, name, nil)
 	f.Config(ctx, name, m)
 }
 
