@@ -81,3 +81,5 @@ require (
 	storj.io/common v0.0.0-20210203145648-3768017a858e // indirect
 	storj.io/uplink v1.4.5
 )
+
+replace github.com/pkg/sftp v1.12.0 => github.com/drakkan/sftp v1.10.2-0.20210223181326-5f2c008b8ecc
