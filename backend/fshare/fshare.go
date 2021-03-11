@@ -1,6 +1,6 @@
 // Package box provides an interface to the Box
 // object storage system.
-package box
+package fshare
 
 // FIXME Box only supports file names of 255 characters or less. Names
 // that will not be supported are those that contain non-printable
@@ -32,7 +32,7 @@ import (
 	"github.com/youmark/pkcs8"
 
 	"github.com/pkg/errors"
-	"github.com/rclone/rclone/backend/box/api"
+	"github.com/rclone/rclone/backend/fshare/api"
 	"github.com/rclone/rclone/fs"
 	"github.com/rclone/rclone/fs/config"
 	"github.com/rclone/rclone/fs/config/configmap"
@@ -50,8 +50,8 @@ import (
 )
 
 const (
-	rcloneUserAgent = "rclone-MOMUFQ"
-	rcloneAppKey = "dMnqMMZMUnN5YpvKENaEhdQQ5jxDqddt"
+	UserAgent = "rclone-MOMUFQ"
+	AppKey = "dMnqMMZMUnN5YpvKENaEhdQQ5jxDqddt"
 	// rcloneClientID              = "d0374ba6pgmaguie02ge15sv1mllndho"
 	// rcloneEncryptedClientSecret = "sYbJYm99WB8jzeaLPU0OPDMJKIkZvD2qOn3SyEMfiJr03RdtDt3xcZEIudRhbIDL"
 	// minSleep                    = 10 * time.Millisecond
@@ -68,42 +68,80 @@ const (
 // Globals
 var (
 	// Description of how to auth for this app
-	oauthConfig = &oauth2.Config{
-		Scopes: nil,
-		Endpoint: oauth2.Endpoint{
-			AuthURL:  "https://app.box.com/api/oauth2/authorize",
-			TokenURL: "https://app.box.com/api/oauth2/token",
-		},
-		ClientID:     rcloneClientID,
-		ClientSecret: obscure.MustReveal(rcloneEncryptedClientSecret),
-		RedirectURL:  oauthutil.RedirectURL,
-	}
+	// oauthConfig = &oauth2.Config{
+	// 	Scopes: nil,
+	// 	Endpoint: oauth2.Endpoint{
+	// 		AuthURL:  "https://app.box.com/api/oauth2/authorize",
+	// 		TokenURL: "https://app.box.com/api/oauth2/token",
+	// 	},
+	// 	ClientID:     rcloneClientID,
+	// 	ClientSecret: obscure.MustReveal(rcloneEncryptedClientSecret),
+	// 	RedirectURL:  oauthutil.RedirectURL,
+	// }
 )
+
+// withDefault returns value but if value is "" then it returns defaultValue
+func withDefault(key, defaultValue string) (value string) {
+	if value == "" {
+		value = defaultValue
+	}
+	return value
+}
 
 // Register with Fs
 func init() {
 	fs.Register(&fs.RegInfo{
-		Name:        "box",
-		Description: "Box",
+		Name:        "fshare",
+		Description: "Fshare",
 		NewFs:       NewFs,
 		Config: func(ctx context.Context, name string, m configmap.Mapper) {
-			jsonFile, ok := m.Get("box_config_file")
-			boxSubType, boxSubTypeOk := m.Get("box_sub_type")
-			boxAccessToken, boxAccessTokenOk := m.Get("access_token")
-			var err error
-			// If using box config.json, use JWT auth
-			if ok && boxSubTypeOk && jsonFile != "" && boxSubType != "" {
-				err = refreshJWTToken(ctx, jsonFile, boxSubType, name, m)
-				if err != nil {
-					log.Fatalf("Failed to configure token with jwt authentication: %v", err)
-				}
-				// Else, if not using an access token, use oauth2
-			} else if boxAccessToken == "" || !boxAccessTokenOk {
-				err = oauthutil.Config(ctx, "box", name, m, oauthConfig, nil)
-				if err != nil {
-					log.Fatalf("Failed to configure token with oauth authentication: %v", err)
+			opt := new(Options)
+			err := configstruct.Set(m, opt)
+			if err != nil {
+				log.Fatalf("Failed to read options: %v", err)
+			}
+
+			if opt.RefreshToken != "" {
+				fmt.Printf("Already have a token - refresh?\n")
+				if !config.ConfirmWithConfig(ctx, m, "config_refresh_token", true) {
+					return
 				}
 			}
+
+			fmt.Printf("User email> ")
+			userEmail := config.ReadLine()
+			password := config.GetPassword("Your Fshare password is only required during setup and will not be stored.")
+			authRequest := api.AppAuthorization{
+				UserEmail: userEmail,
+				Password: password,
+				AppKey: withDefault(opt.AppKey, AppKey),
+			}
+
+			var resp *http.Response
+			requestOpts := rest.Opts{
+				Method: "POST",
+				Path: "/api/user/login",
+				Parameters: url.Values{},
+			}
+			requestOpts.Parameters.Set("user-agent", withDefault(opt.UserAgent, UserAgent))
+			err := f.pa
+			// jsonFile, ok := m.Get("box_config_file")
+			// boxSubType, boxSubTypeOk := m.Get("box_sub_type")
+			// boxAccessToken, boxAccessTokenOk := m.Get("access_token")
+			// var err error
+			// // If using box config.json, use JWT auth
+			// if ok && boxSubTypeOk && jsonFile != "" && boxSubType != "" {
+			// 	err = refreshJWTToken(ctx, jsonFile, boxSubType, name, m)
+			// 	if err != nil {
+			// 		log.Fatalf("Failed to configure token with jwt authentication: %v", err)
+			// 	}
+			// 	// Else, if not using an access token, use oauth2
+			// } else if boxAccessToken == "" || !boxAccessTokenOk {
+			// 	err = oauthutil.Config(ctx, "box", name, m, oauthConfig, nil)
+			// 	if err != nil {
+			// 		log.Fatalf("Failed to configure token with oauth authentication: %v", err)
+			// 	}
+			// }
 		},
 		Options: append(oauthutil.SharedOptions, []fs.Option{{
 			Name:     "root_folder_id",
@@ -245,11 +283,8 @@ func getDecryptedPrivateKey(boxConfig *api.ConfigJSON) (key *rsa.PrivateKey, err
 
 // Options defines the configuration for this backend
 type Options struct {
-	UploadCutoff  fs.SizeSuffix        `config:"upload_cutoff"`
-	CommitRetries int                  `config:"commit_retries"`
-	Enc           encoder.MultiEncoder `config:"encoding"`
-	RootFolderID  string               `config:"root_folder_id"`
-	AccessToken   string               `config:"access_token"`
+	UserAgent string `config:"user_agent"`
+	AppKey string `config:"app_key"`
 }
 
 // Fs represents a remote box

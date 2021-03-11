@@ -1,5 +1,5 @@
 // Test Box filesystem interface
-package box_test
+package fshare_test
 
 import (
 	"testing"

@@ -1,6 +1,6 @@
 // multipart upload for box
 
-package box
+package fshare
 
 import (
 	"bytes"
